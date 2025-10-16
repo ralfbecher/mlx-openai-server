@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import json
 from mlx_lm import load, generate, stream_generate
+from mlx_lm.sample_utils import make_sampler
 
 
 
@@ -42,14 +43,15 @@ def chat(req: ChatReq):
         add_generation_prompt=True
     )
 
+    sampler = make_sampler(temp=req.temperature)
+
     if req.stream:
         def generate_chunks():
             for response in stream_generate(
                 model, tok,
                 prompt=prompt,
                 max_tokens=req.max_tokens,
-                temp=req.temperature,
-                verbose=False
+                sampler=sampler
             ):
                 chunk = {
                     "id": "mlx-chat-stream",
@@ -78,7 +80,7 @@ def chat(req: ChatReq):
         return StreamingResponse(generate_chunks(), media_type="text/event-stream")
     else:
         out = generate(model, tok, prompt=prompt,
-                       max_tokens=req.max_tokens, temp=req.temperature, verbose=False)
+                       max_tokens=req.max_tokens, sampler=sampler)
         return {
             "id": "mlx-chat-1",
             "object": "chat.completion",

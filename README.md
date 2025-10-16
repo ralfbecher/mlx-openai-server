@@ -13,18 +13,21 @@ OpenAI-compatible API server using Apple's MLX framework for fast local inferenc
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/ralfbecher/mlx-openai-server.git
 cd mlx-openai-server
 ```
 
 2. Create a virtual environment:
+
 ```bash
 python -m venv .
 source bin/activate  # On macOS/Linux
 ```
 
 3. Install dependencies:
+
 ```bash
 pip install -r requirements-mlx.txt
 ```
@@ -32,6 +35,7 @@ pip install -r requirements-mlx.txt
 ## Usage
 
 Start the server:
+
 ```bash
 python -m uvicorn mlx_server:app --host 0.0.0.0 --port 2244
 ```
@@ -46,6 +50,7 @@ The server will be available at `http://localhost:2244`
 ### Example Request
 
 **Non-streaming:**
+
 ```bash
 curl -X POST http://localhost:2244/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -57,6 +62,7 @@ curl -X POST http://localhost:2244/v1/chat/completions \
 ```
 
 **Streaming:**
+
 ```bash
 curl -X POST http://localhost:2244/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -108,8 +114,9 @@ You can customize the model behavior in Continue by adding these parameters:
       "apiKey": "not-needed",
       "completionOptions": {
         "temperature": 0.2,
-        "maxTokens": 512
-      }
+        "maxTokens": 4096
+      },
+      "useStreaming": true
     }
   ]
 }
@@ -134,6 +141,30 @@ Browse available MLX models at: https://huggingface.co/mlx-community
 - Apple Silicon Mac (M1/M2/M3)
 - Python 3.8+
 - MLX framework
+
+## Troubleshooting
+
+### HF_HUB_ENABLE_HF_TRANSFER Error
+
+If you see an error like `ValueError: Fast download using 'hf_transfer' is enabled but 'hf_transfer' package is not available`, you have two options:
+
+1. **Disable fast transfer** (recommended):
+
+```bash
+HF_HUB_ENABLE_HF_TRANSFER=0 python -m uvicorn mlx_server:app --host 0.0.0.0 --port 2244
+```
+
+2. **Install hf_transfer**:
+
+```bash
+pip install hf-transfer
+```
+
+To permanently disable this, unset the environment variable:
+
+```bash
+unset HF_HUB_ENABLE_HF_TRANSFER
+```
 
 ## License
 
