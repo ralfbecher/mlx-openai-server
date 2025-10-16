@@ -78,21 +78,16 @@ curl -X POST http://localhost:2244/v1/chat/completions \
 To use this server with the [Continue](https://continue.dev) VS Code extension:
 
 1. Install the Continue extension in VS Code
-2. Open Continue settings (Command Palette: "Continue: Open config.json")
-3. Add the following configuration to your `config.json`:
+2. Open Continue settings (Command Palette: "Continue: Open config.yaml")
+3. Add the following configuration to your `config.yaml`:
 
-```json
-{
-  "models": [
-    {
-      "title": "MLX Qwen 7B",
-      "provider": "openai",
-      "model": "qwen30b-mlx",
-      "apiBase": "http://localhost:2244/v1",
-      "apiKey": "not-needed"
-    }
-  ]
-}
+```yaml
+models:
+  - title: MLX Qwen 7B
+    provider: openai
+    model: qwen30b-mlx
+    apiBase: http://localhost:2244/v1
+    apiKey: not-needed
 ```
 
 4. Save the configuration and restart VS Code
@@ -103,23 +98,17 @@ To use this server with the [Continue](https://continue.dev) VS Code extension:
 
 You can customize the model behavior in Continue by adding these parameters:
 
-```json
-{
-  "models": [
-    {
-      "title": "MLX Qwen 7B",
-      "provider": "openai",
-      "model": "qwen30b-mlx",
-      "apiBase": "http://localhost:2244/v1",
-      "apiKey": "not-needed",
-      "completionOptions": {
-        "temperature": 0.2,
-        "maxTokens": 4096
-      },
-      "useStreaming": true
-    }
-  ]
-}
+```yaml
+models:
+  - title: MLX Qwen 7B
+    provider: openai
+    model: qwen30b-mlx
+    apiBase: http://localhost:2244/v1
+    apiKey: not-needed
+    completionOptions:
+      temperature: 0.2
+      maxTokens: 4096
+    useStreaming: true
 ```
 
 ## Model Configuration
