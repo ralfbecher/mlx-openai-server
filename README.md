@@ -83,11 +83,14 @@ To use this server with the [Continue](https://continue.dev) VS Code extension:
 
 ```yaml
 models:
-  - title: MLX Qwen 7B
+  - name: Qwen3-Coder-30B-MLX
     provider: openai
-    model: qwen30b-mlx
+    model: mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
     apiBase: http://localhost:2244/v1
-    apiKey: not-needed
+    roles:
+      - chat
+      - edit
+      - apply
 ```
 
 4. Save the configuration and restart VS Code
@@ -100,15 +103,17 @@ You can customize the model behavior in Continue by adding these parameters:
 
 ```yaml
 models:
-  - title: MLX Qwen 7B
+  - name: Qwen3-Coder-30B-MLX
     provider: openai
-    model: qwen30b-mlx
+    model: mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
     apiBase: http://localhost:2244/v1
-    apiKey: not-needed
+    roles:
+      - chat
+      - edit
+      - apply
     completionOptions:
       temperature: 0.2
       maxTokens: 4096
-    useStreaming: true
 ```
 
 ## Model Configuration
