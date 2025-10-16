@@ -25,6 +25,8 @@ venv/
 ENV/
 env/
 .venv
+pyvenv.cfg
+bin/
 
 # IDE
 .vscode/
