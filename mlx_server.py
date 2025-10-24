@@ -17,7 +17,10 @@ _tokenizer = None
 def get_model():
     global _model, _tokenizer
     if _model is None:
-        _model, _tokenizer = load("mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
+        model_name = "mlx-community/Qwen3-Coder-30B-A3B-Instruct-6bit"
+        print(f"Loading model: {model_name}")
+        _model, _tokenizer = load(model_name)
+        print(f"Model loaded successfully!")
     return _model, _tokenizer
 
 class Msg(BaseModel):
