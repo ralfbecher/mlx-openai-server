@@ -17,7 +17,7 @@ _tokenizer = None
 def get_model():
     global _model, _tokenizer
     if _model is None:
-        _model, _tokenizer = load("mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")
+        _model, _tokenizer = load("mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit")
     return _model, _tokenizer
 
 class Msg(BaseModel):
