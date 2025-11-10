@@ -405,7 +405,7 @@ mlx-openai-server launch \
 - `--host`: Host to run the server on (default: 0.0.0.0)
 - `--disable-auto-resize`: Disable automatic model resizing. Only works for Vision Language Models.
 - `--enable-auto-tool-choice`: Enable automatic tool choice. Only works with language models (`lm` or `multimodal` model types).
-- `--tool-call-parser`: Specify tool call parser to use instead of auto-detection. Only works with language models (`lm` or `multimodal` model types). Available options: `qwen3`, `glm4_moe`, `qwen3_moe`, `qwen3_next`, `qwen3_vl`, `harmony`, `minimax`.
+- `--tool-call-parser`: Specify tool call parser to use instead of auto-detection. Only works with language models (`lm` or `multimodal` model types). Available options: `qwen3`, `glm4_moe`, `qwen3_moe`, `qwen3_next`, `qwen3_vl`, `harmony`, `minimax`, `xml`.
 - `--reasoning-parser`: Specify reasoning parser to use instead of auto-detection. Only works with language models (`lm` or `multimodal` model types). Available options: `qwen3`, `glm4_moe`, `qwen3_moe`, `qwen3_next`, `qwen3_vl`, `harmony`, `minimax`.
 - `--log-file`: Path to log file. If not specified, logs will be written to 'logs/app.log' by default.
 - `--no-log-file`: Disable file logging entirely. Only console output will be shown.
@@ -419,13 +419,25 @@ The server supports manual configuration of parsers for tool calls and reasoning
 
 The following parsers are available for both tool call and reasoning parsing:
 
-- **`qwen3`**: Parser for Qwen3 model formats
+- **`qwen3`**: Parser for standard Qwen2.5/Qwen3-Instruct models that use **JSON inside XML tags**
+  - Format: `<tool_call>{"name": "foo", "arguments": {...}}</tool_call>`
+  - Best for: `Qwen2.5-7B-Instruct`, `Qwen2.5-14B-Instruct`, standard Qwen3-Instruct models
+
+- **`xml`**: Parser for models that use **XML inside XML tags** (full XML format)
+  - Format: `<tool_call><function=foo><parameter=bar>value</parameter></function></tool_call>`
+  - Best for: `Qwen3-Coder` models (e.g., `Qwen3-Coder-30B-A3B-Instruct-6bit`)
+  - Also supports direct format without wrapper: `<function=foo><parameter=bar>value</parameter></function>`
+
 - **`glm4_moe`**: Parser for GLM4 MoE model formats
 - **`qwen3_moe`**: Parser for Qwen3 MoE model formats
 - **`qwen3_next`**: Parser for Qwen3 Next model formats
 - **`qwen3_vl`**: Parser for Qwen3 Vision-Language model formats
 - **`harmony`**: Unified parser for Harmony/GPT-OSS models (handles both thinking and tools)
 - **`minimax`**: Parser for MiniMax model formats
+
+> **Important:** Choose the correct parser based on your model's **tool call format**, not just the model name:
+> - Use `qwen3` if your model outputs JSON inside `<tool_call>` tags
+> - Use `xml` if your model outputs XML elements inside `<tool_call>` tags (like Qwen3-Coder models)
 
 #### Parser Parameters
 
@@ -476,6 +488,16 @@ mlx-openai-server launch \
   --model-type lm \
   --tool-call-parser harmony
 # Note: Harmony parser handles both tool calls and reasoning, so specifying either parameter will use it
+```
+
+**Using XML parser (generic XML-based tool calls):**
+```bash
+mlx-openai-server launch \
+  --model-path mlx-community/Qwen3-Coder-30B-A3B-Instruct-6bit \
+  --model-type lm \
+  --tool-call-parser xml
+# Note: XML parser works with models that output tool calls in XML format
+# It supports both <tool_call> wrapper format and direct <function=> format
 ```
 
 > **Note:** Parser configuration is only applicable to language models (`lm` or `multimodal` model types). If parsers are not specified, the server will not perform any parsing, and raw model responses will be returned.

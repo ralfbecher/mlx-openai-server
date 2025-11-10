@@ -21,6 +21,7 @@ import re
 import json
 from typing import Any, Dict, List, Optional, Tuple
 from xml.etree import ElementTree as ET
+from loguru import logger
 from app.handler.parser.base import BaseToolParser, ParseToolState
 
 
@@ -92,8 +93,8 @@ class XMLToolParser(BaseToolParser):
             }
 
         except Exception as e:
-            print(f"Error parsing XML tool content: {e}")
-            print(f"Content was: {tool_content}")
+            logger.error(f"Error parsing XML tool content: {e}")
+            logger.debug(f"Content was: {tool_content}")
             raise
 
     def parse_stream(self, chunk: Optional[str] = None) -> Tuple[Optional[Any], bool]:
@@ -113,7 +114,7 @@ class XMLToolParser(BaseToolParser):
 
         # Check if we're starting a tool call with <tool_call> wrapper
         if self.tool_open in chunk and self.state == ParseToolState.NORMAL:
-            print(f"[XMLToolParser] Found tool_open (<tool_call>) in chunk")
+            logger.debug(f"[XMLToolParser] Found tool_open (<tool_call>) in chunk")
             self.state = ParseToolState.FOUND_PREFIX
             self.no_wrapper_mode = False
             start_tool_index = chunk.find(self.tool_open)
@@ -122,7 +123,7 @@ class XMLToolParser(BaseToolParser):
             end_tool_index = chunk.find(self.tool_close, start_tool_index + len(self.tool_open))
             if end_tool_index != -1:
                 # Complete tool call in one chunk
-                print(f"[XMLToolParser] Complete tool call in one chunk")
+                logger.debug(f"[XMLToolParser] Complete tool call in one chunk")
                 # Extract content between <tool_call> and </tool_call>
                 tool_content = chunk[start_tool_index + len(self.tool_open):end_tool_index]
                 self.state = ParseToolState.NORMAL
@@ -131,7 +132,7 @@ class XMLToolParser(BaseToolParser):
                 try:
                     # Parse the tool call content
                     result = self._parse_tool_content(tool_content)
-                    print(f"[XMLToolParser] Returning complete tool call: {result['name']}")
+                    logger.debug(f"[XMLToolParser] Returning complete tool call: {result['name']}")
                     self.function_name = None
 
                     # When a complete tool call is found in one chunk, return it directly
@@ -139,13 +140,13 @@ class XMLToolParser(BaseToolParser):
                     # since the tool call is the primary content
                     return result, True
                 except Exception as e:
-                    print(f"[XMLToolParser] Error parsing tool call: {e}")
+                    logger.error(f"[XMLToolParser] Error parsing tool call: {e}")
                     self.function_name = None
                     return None, True
 
             # Only opening tag found, start buffering content after <tool_call>
             self.buffer = chunk[start_tool_index + len(self.tool_open):]
-            print(f"[XMLToolParser] Starting to buffer, buffer size: {len(self.buffer)}")
+            logger.debug(f"[XMLToolParser] Starting to buffer, buffer size: {len(self.buffer)}")
 
             # Return any content before the tool call
             before_tool = chunk[:start_tool_index]
@@ -153,7 +154,7 @@ class XMLToolParser(BaseToolParser):
 
         # Check if we're starting a tool call WITHOUT <tool_call> wrapper (direct <function=>)
         if "<function=" in chunk and self.state == ParseToolState.NORMAL:
-            print(f"[XMLToolParser] Found <function=> (no wrapper mode)")
+            logger.debug(f"[XMLToolParser] Found <function=> (no wrapper mode)")
             self.state = ParseToolState.FOUND_PREFIX
             self.no_wrapper_mode = True
             start_func_index = chunk.find("<function=")
@@ -162,7 +163,7 @@ class XMLToolParser(BaseToolParser):
             end_func_index = chunk.find("</function>", start_func_index)
             if end_func_index != -1:
                 # Complete function call in one chunk
-                print(f"[XMLToolParser] Complete function call in one chunk (no wrapper)")
+                logger.debug(f"[XMLToolParser] Complete function call in one chunk (no wrapper)")
                 # Extract content from <function=> to </function>
                 func_content = chunk[start_func_index:end_func_index + len("</function>")]
                 self.state = ParseToolState.NORMAL
@@ -171,7 +172,7 @@ class XMLToolParser(BaseToolParser):
                 try:
                     # Parse the function call content
                     result = self._parse_tool_content(func_content)
-                    print(f"[XMLToolParser] Returning complete function call: {result['name']}")
+                    logger.debug(f"[XMLToolParser] Returning complete function call: {result['name']}")
                     self.function_name = None
                     self.no_wrapper_mode = False
 
@@ -179,14 +180,14 @@ class XMLToolParser(BaseToolParser):
                     # Any text before the function call is considered preamble/thinking and can be discarded
                     return result, True
                 except Exception as e:
-                    print(f"[XMLToolParser] Error parsing function call: {e}")
+                    logger.error(f"[XMLToolParser] Error parsing function call: {e}")
                     self.function_name = None
                     self.no_wrapper_mode = False
                     return None, True
 
             # Only opening function tag found, start buffering
             self.buffer = chunk[start_func_index:]
-            print(f"[XMLToolParser] Starting to buffer (no wrapper), buffer size: {len(self.buffer)}")
+            logger.debug(f"[XMLToolParser] Starting to buffer (no wrapper), buffer size: {len(self.buffer)}")
 
             # Return any content before the function call
             before_func = chunk[:start_func_index]
@@ -201,7 +202,7 @@ class XMLToolParser(BaseToolParser):
                 end_func_index = combined.find("</function>")
                 if end_func_index != -1:
                     # Found the closing tag
-                    print(f"[XMLToolParser] Found </function>, completing function call (no wrapper)")
+                    logger.debug(f"[XMLToolParser] Found </function>, completing function call (no wrapper)")
                     # Extract everything up to and including </function>
                     complete_function = combined[:end_func_index + len("</function>")]
                     self.state = ParseToolState.NORMAL
@@ -210,19 +211,19 @@ class XMLToolParser(BaseToolParser):
                     try:
                         # Parse the function call content
                         result = self._parse_tool_content(complete_function)
-                        print(f"[XMLToolParser] Returning complete function call: {result['name']}")
+                        logger.debug(f"[XMLToolParser] Returning complete function call: {result['name']}")
                         self.function_name = None
                         self.no_wrapper_mode = False
                         return result, True
                     except Exception as e:
-                        print(f"[XMLToolParser] Error parsing function call: {e}")
+                        logger.error(f"[XMLToolParser] Error parsing function call: {e}")
                         self.function_name = None
                         self.no_wrapper_mode = False
                         return None, False
                 else:
                     # Still buffering
                     self.buffer = combined
-                    print(f"[XMLToolParser] Still buffering (no wrapper), buffer size: {len(self.buffer)}")
+                    logger.debug(f"[XMLToolParser] Still buffering (no wrapper), buffer size: {len(self.buffer)}")
                     return None, False
             else:
                 # Looking for </tool_call> when in wrapper mode
@@ -231,7 +232,7 @@ class XMLToolParser(BaseToolParser):
                 end_tool_index = combined.find(self.tool_close)
                 if end_tool_index != -1:
                     # Found the closing tag
-                    print(f"[XMLToolParser] Found tool_close, completing tool call")
+                    logger.debug(f"[XMLToolParser] Found tool_close, completing tool call")
                     # Extract everything up to but not including </tool_call>
                     tool_content = combined[:end_tool_index]
                     self.state = ParseToolState.NORMAL
@@ -240,17 +241,17 @@ class XMLToolParser(BaseToolParser):
                     try:
                         # Parse the tool call content
                         result = self._parse_tool_content(tool_content)
-                        print(f"[XMLToolParser] Returning complete tool call: {result['name']}")
+                        logger.debug(f"[XMLToolParser] Returning complete tool call: {result['name']}")
                         self.function_name = None
                         return result, True
                     except Exception as e:
-                        print(f"[XMLToolParser] Error parsing tool call: {e}")
+                        logger.error(f"[XMLToolParser] Error parsing tool call: {e}")
                         self.function_name = None
                         return None, False
                 else:
                     # Still buffering
                     self.buffer = combined
-                    print(f"[XMLToolParser] Still buffering, buffer size: {len(self.buffer)}")
+                    logger.debug(f"[XMLToolParser] Still buffering, buffer size: {len(self.buffer)}")
                     return None, False
 
         # Normal content, not in a tool call
@@ -278,7 +279,7 @@ class XMLToolParser(BaseToolParser):
             for i in range(len(tag) - 1, 0, -1):
                 if combined.endswith(tag[:i]):
                     # This could be the start of a tag, buffer it
-                    print(f"[XMLToolParser] Buffering potential tag start: {repr(tag[:i])}")
+                    logger.debug(f"[XMLToolParser] Buffering potential tag start: {repr(tag[:i])}")
                     self.partial_tag_buffer = tag[:i]
                     # Return everything except the potential tag start
                     content_to_return = combined[:-i]
@@ -288,5 +289,5 @@ class XMLToolParser(BaseToolParser):
         if self.partial_tag_buffer:
             self.partial_tag_buffer = ""
 
-        print(f"[XMLToolParser] Normal content: {repr(combined[:50])}")
+        logger.debug(f"[XMLToolParser] Normal content: {repr(combined[:50])}")
         return combined, False
