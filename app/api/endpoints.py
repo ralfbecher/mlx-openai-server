@@ -278,7 +278,7 @@ async def handle_stream_response(generator: AsyncGenerator, model: str):
     created_time = int(time.time())
     finish_reason = "stop"
     tool_call_index = -1
-    
+
     try:
         # First chunk: role-only delta, as per OpenAI
         first_chunk = ChatCompletionChunk(
@@ -289,17 +289,17 @@ async def handle_stream_response(generator: AsyncGenerator, model: str):
             choices=[StreamingChoice(index=0, delta=Delta(role="assistant"))]
         )
         yield _yield_sse_chunk(first_chunk)
-        
+
         async for chunk in generator:
             if not chunk:
                 continue
-                
+
             if isinstance(chunk, str):
                 response_chunk = create_response_chunk(
                     chunk, model, chat_id=chat_index, created_time=created_time
                 )
                 yield _yield_sse_chunk(response_chunk)
-                
+
             elif isinstance(chunk, dict):
                 # Handle tool call chunks
                 payload = dict(chunk)  # Create a copy to avoid mutating the original
@@ -309,20 +309,26 @@ async def handle_stream_response(generator: AsyncGenerator, model: str):
                     payload["index"] = tool_call_index
                 elif payload.get("arguments") and "index" not in payload:
                     payload["index"] = tool_call_index
-                
+
                 response_chunk = create_response_chunk(
                     payload, model, chat_id=chat_index, created_time=created_time
                 )
                 yield _yield_sse_chunk(response_chunk)
-                
+
             else:
                 error_response = create_error_response(
-                    f"Invalid chunk type: {type(chunk)}", 
-                    "server_error", 
+                    f"Invalid chunk type: {type(chunk)}",
+                    "server_error",
                     HTTPStatus.INTERNAL_SERVER_ERROR
                 )
                 yield _yield_sse_chunk(error_response)
-                
+
+    except GeneratorExit:
+        # Client disconnected - close the upstream generator gracefully
+        logger.debug(f"Client disconnected during streaming for request {chat_index}")
+        await generator.aclose()
+        raise
+
     except Exception as e:
         logger.error(f"Error in stream wrapper: {str(e)}", exc_info=True)
         error_response = create_error_response(
