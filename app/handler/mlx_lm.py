@@ -1,4 +1,5 @@
 import gc
+import json
 import time
 import uuid
 import asyncio
@@ -314,17 +315,120 @@ class MLXLMHandler:
             else:
                 # Reformat messages for models without conversion needs
                 refined_messages = []
-                for message in messages:
-                    # Filter out None values
-                    cleaned_message = {k: v for k, v in message.items() if v is not None}
-                    refined_messages.append(cleaned_message)
+                for idx, message in enumerate(messages):
+                    # Debug: Check message type
+                    if not isinstance(message, dict):
+                        logger.error(f"_process_request: Message at index {idx} is not a dict: type={type(message)}, value={message}")
+                        raise ValueError(f"Message at index {idx} is not a dict, got {type(message)}")
+
+                    # Debug: Log message details
+                    logger.debug(f"_process_request: Processing message {idx}: role={message.get('role')}, keys={list(message.keys())}")
+
+                    # Filter out None values and convert Pydantic models to dicts
+                    try:
+                        cleaned_message = {}
+                        for k, v in message.items():
+                            if v is None:
+                                continue
+
+                            # Convert tool_calls list of Pydantic models to list of dicts
+                            # and flatten the nested function structure for tokenizer compatibility
+                            if k == "tool_calls" and isinstance(v, list):
+                                flattened_tool_calls = []
+                                for tc in v:
+                                    # Convert Pydantic to dict if needed
+                                    tc_dict = tc.model_dump() if hasattr(tc, 'model_dump') else tc
+
+                                    # Flatten nested function structure for tokenizer
+                                    if 'function' in tc_dict and isinstance(tc_dict['function'], dict):
+                                        arguments = tc_dict['function'].get('arguments')
+                                        # If arguments is a JSON string, parse it back to dict for the tokenizer
+                                        if isinstance(arguments, str):
+                                            try:
+                                                arguments = json.loads(arguments)
+                                            except (json.JSONDecodeError, ValueError):
+                                                pass  # Keep as string if parsing fails
+
+                                        flattened = {
+                                            'id': tc_dict.get('id'),
+                                            'type': tc_dict.get('type', 'function'),
+                                            'name': tc_dict['function'].get('name'),
+                                            'arguments': arguments
+                                        }
+                                        flattened_tool_calls.append(flattened)
+                                    else:
+                                        # Also handle case where arguments might be a JSON string
+                                        if 'arguments' in tc_dict and isinstance(tc_dict['arguments'], str):
+                                            try:
+                                                tc_dict['arguments'] = json.loads(tc_dict['arguments'])
+                                            except (json.JSONDecodeError, ValueError):
+                                                pass
+                                        flattened_tool_calls.append(tc_dict)
+
+                                cleaned_message[k] = flattened_tool_calls
+                            else:
+                                cleaned_message[k] = v
+
+                        refined_messages.append(cleaned_message)
+                    except Exception as e:
+                        logger.error(f"_process_request: Error cleaning message {idx}: {e}")
+                        logger.error(f"  Message content: {message}")
+                        raise
+
+            # Debug: Log what we're passing to the model
+            logger.debug(f"_process_request: Calling model with {len(refined_messages)} messages")
+            for idx, msg in enumerate(refined_messages):
+                logger.debug(f"  Refined message {idx}: role={msg.get('role')}, keys={list(msg.keys())}")
+                if 'tool_calls' in msg and msg['tool_calls']:
+                    logger.debug(f"    tool_calls type: {type(msg['tool_calls'])}")
+                    if isinstance(msg['tool_calls'], list) and len(msg['tool_calls']) > 0:
+                        logger.debug(f"    tool_calls[0] type: {type(msg['tool_calls'][0])}")
+
+            # Debug: Log model_params
+            logger.debug(f"_process_request: model_params keys: {list(model_params.keys())}")
+            if 'chat_template_kwargs' in model_params:
+                logger.debug(f"  chat_template_kwargs: {model_params['chat_template_kwargs']}")
+
+            # Convert tools in chat_template_kwargs to flatten nested function structure
+            if 'chat_template_kwargs' in model_params and 'tools' in model_params['chat_template_kwargs']:
+                flattened_tools = []
+                for tool in model_params['chat_template_kwargs']['tools']:
+                    if isinstance(tool, dict) and 'function' in tool and isinstance(tool['function'], dict):
+                        # Flatten the nested function structure
+                        flattened = {
+                            'type': tool.get('type', 'function'),
+                            'name': tool['function'].get('name'),
+                            'description': tool['function'].get('description'),
+                            'parameters': tool['function'].get('parameters')
+                        }
+                        flattened_tools.append(flattened)
+                    else:
+                        flattened_tools.append(tool)
+
+                model_params['chat_template_kwargs']['tools'] = flattened_tools
+                logger.debug(f"  Flattened tools structure for tokenizer compatibility")
 
             # Call the model
-            response = self.model(
-                messages=refined_messages,
-                stream=stream,
-                **model_params
-            )            
+            try:
+                # Add even more detailed logging
+                import traceback
+                logger.debug(f"_process_request: About to call model with:")
+                logger.debug(f"  messages type: {type(refined_messages)}")
+                logger.debug(f"  model_params type: {type(model_params)}")
+                for key, value in model_params.items():
+                    logger.debug(f"  model_params[{key}] type: {type(value)}")
+
+                response = self.model(
+                    messages=refined_messages,
+                    stream=stream,
+                    **model_params
+                )
+            except Exception as e:
+                logger.error(f"_process_request: Error calling model: {e}")
+                logger.error(f"  refined_messages: {refined_messages}")
+                logger.error(f"  Full traceback:")
+                logger.error(traceback.format_exc())
+                raise            
             # Force garbage collection after model inference
             gc.collect()
             return response
@@ -396,21 +500,40 @@ class MLXLMHandler:
             chat_messages = []
             system_messages = []
             non_system_messages = []
-            
-            for message in request_dict.get("messages", []):
+
+            # Debug: Log input messages
+            input_messages = request_dict.get("messages", [])
+            logger.debug(f"_prepare_text_request: processing {len(input_messages)} messages")
+            for idx, msg in enumerate(input_messages):
+                if isinstance(msg, dict):
+                    logger.debug(f"  Message {idx}: role={msg.get('role')}, keys={list(msg.keys())}")
+                else:
+                    logger.debug(f"  Message {idx}: type={type(msg)}, NOT A DICT")
+
+            for message in input_messages:
                 # Handle content that might be a list of dictionaries (multimodal format)
                 content = message.get("content", None)
-                if content is None:
+
+                # Handle messages with tool_calls (assistant messages that called tools)
+                # These may have content=None but still need to be included
+                if content is None and not message.get("tool_calls"):
+                    # Skip only if there's no content AND no tool_calls
                     continue
-                if isinstance(content, list):
-                    # For LM models, extract only text content and concatenate
-                    text_parts = []
-                    for item in content:
-                        if isinstance(item, dict) and item.get("type") == "text" and item.get("text"):
-                            text_parts.append(item["text"])
-                    content = "\n".join(text_parts) if text_parts else ""
-                
-                message["content"] = content                
+
+                if content is not None:
+                    if isinstance(content, list):
+                        # For LM models, extract only text content and concatenate
+                        text_parts = []
+                        for item in content:
+                            if isinstance(item, dict) and item.get("type") == "text" and item.get("text"):
+                                text_parts.append(item["text"])
+                        content = "\n".join(text_parts) if text_parts else ""
+
+                    message["content"] = content
+                elif message.get("tool_calls"):
+                    # For messages with tool_calls but no content, set content to empty string
+                    message["content"] = ""
+
                 # Separate system messages from other messages
                 if message.get("role") == "system":
                     system_messages.append(message)
@@ -431,6 +554,12 @@ class MLXLMHandler:
             
             # Add all non-system messages after the merged system message
             chat_messages.extend(non_system_messages)
+
+            # Debug: Log message types
+            for idx, msg in enumerate(chat_messages):
+                if not isinstance(msg, dict):
+                    logger.error(f"_prepare_text_request: chat_messages[{idx}] is not a dict: type={type(msg)}, value={msg}")
+
             return chat_messages, request_dict
         
         except Exception as e:

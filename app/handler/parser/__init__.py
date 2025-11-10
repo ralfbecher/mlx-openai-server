@@ -6,6 +6,7 @@ from app.handler.parser.qwen3_next import Qwen3NextToolParser, Qwen3NextThinking
 from app.handler.parser.qwen3_vl import Qwen3VLToolParser, Qwen3VLThinkingParser
 from app.handler.parser.base import BaseToolParser, BaseThinkingParser, BaseMessageConverter
 from app.handler.parser.minimax import MinimaxToolParser, MinimaxThinkingParser, MiniMaxMessageConverter
+from app.handler.parser.xml_tool import XMLToolParser
 from app.handler.parser.factory import ParserFactory
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     'Qwen3VLThinkingParser',
     'MinimaxToolParser',
     'MinimaxThinkingParser',
+    'XMLToolParser',
     'ParserFactory',
 ]

@@ -230,6 +230,11 @@ def create_response_chunk(chunk: Union[str, Dict[str, Any]], model: str, is_fina
             )]
         )
 
+    # Convert arguments to JSON string if it's a dict
+    arguments_str = chunk["arguments"]
+    if isinstance(arguments_str, dict):
+        arguments_str = json.dumps(arguments_str)
+
     if "name" in chunk and chunk["name"]:
         tool_chunk = ChoiceDeltaToolCall(
             index=chunk["index"],
@@ -237,7 +242,7 @@ def create_response_chunk(chunk: Union[str, Dict[str, Any]], model: str, is_fina
             id=get_tool_call_id(),
             function=ChoiceDeltaFunctionCall(
                 name=chunk["name"],
-                arguments=chunk["arguments"]
+                arguments=arguments_str
             )
         )
     else:
@@ -245,7 +250,7 @@ def create_response_chunk(chunk: Union[str, Dict[str, Any]], model: str, is_fina
             index=chunk["index"],
             type="function",
             function= ChoiceDeltaFunctionCall(
-                arguments=chunk["arguments"]
+                arguments=arguments_str
             )
         )
     delta = Delta(
@@ -397,15 +402,14 @@ def format_final_response(response: Union[str, Dict[str, Any]], model: str) -> C
             choices=[Choice(index=0, message=Message(role="assistant", content=response_content, reasoning_content=reasoning_content), finish_reason="stop")]
         )
     for idx, tool_call in enumerate(tool_calls):
-        arguments = tool_call.get("arguments")
-        # If arguments is already a string, use it directly; otherwise serialize it
-        if isinstance(arguments, str):
-            arguments_str = arguments
-        else:
-            arguments_str = json.dumps(arguments)
+        # Convert arguments to JSON string if it's a dict
+        args = tool_call.get("arguments")
+        if isinstance(args, dict):
+            args = json.dumps(args)
+
         function_call = FunctionCall(
             name=tool_call.get("name"),
-            arguments=arguments_str
+            arguments=args
         )
         tool_call_response = ChatCompletionMessageToolCall(
             id=get_tool_call_id(),

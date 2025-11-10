@@ -19,7 +19,8 @@ from app.handler.parser import (
     Qwen3VLToolParser,
     Qwen3VLThinkingParser,
     MinimaxToolParser,
-    MinimaxThinkingParser
+    MinimaxThinkingParser,
+    XMLToolParser
 )
 from app.handler.parser.glm4_moe import Glm4MoEMessageConverter
 from app.handler.parser.minimax import MiniMaxMessageConverter
@@ -54,6 +55,9 @@ PARSER_REGISTRY: Dict[str, Dict[str, Callable]] = {
     "minimax": {
         "thinking": MinimaxThinkingParser,
         "tool": MinimaxToolParser,
+    },
+    "xml": {
+        "tool": XMLToolParser,
     },
 }
 
@@ -98,6 +102,11 @@ PARSER_METADATA: Dict[str, Dict[str, Any]] = {
     "minimax": {
         "respects_enable_thinking": False,
         "needs_redacted_reasoning_prefix": True,  # Needs prefix for both stream and response
+        "has_special_parsing": False,
+    },
+    "xml": {
+        "respects_enable_thinking": False,
+        "needs_redacted_reasoning_prefix": False,
         "has_special_parsing": False,
     },
 }
