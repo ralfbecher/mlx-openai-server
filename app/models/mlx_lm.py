@@ -6,10 +6,8 @@ from mlx_lm.generate import (
     generate,
     stream_generate,
 )
-from outlines.processors import JSONLogitsProcessor
 from mlx_lm.models.cache import make_prompt_cache
 from mlx_lm.sample_utils import make_sampler, make_logits_processors
-from app.utils.outlines_transformer_tokenizer import OutlinesTransformerTokenizer
 from typing import List, Dict, Union, Generator
 
 DEFAULT_TEMPERATURE = os.getenv("DEFAULT_TEMPERATURE", 0.7)
@@ -35,7 +33,6 @@ class MLX_LM:
             self.bos_token = self.tokenizer.bos_token
             self.model_type = self.model.model_type
             self.max_kv_size = context_length
-            self.outlines_tokenizer = OutlinesTransformerTokenizer(self.tokenizer)
         except Exception as e:
             raise ValueError(f"Error loading model: {str(e)}")
         
@@ -166,15 +163,9 @@ class MLX_LM:
         repetition_penalty = kwargs.get("repetition_penalty", 1.0)
         repetition_context_size = kwargs.get("repetition_context_size", 20)
         logits_processors = make_logits_processors(repetition_penalty=repetition_penalty, repetition_context_size=repetition_context_size)
-        json_schema = kwargs.get("schema", None)
-        if json_schema:
-            logits_processors.append(
-                JSONLogitsProcessor(
-                    schema = json_schema,
-                    tokenizer = self.outlines_tokenizer,
-                    tensor_library_name = "mlx"
-                )
-            )
+
+        # Note: JSON schema validation (structured outputs) has been removed
+        # It required the 'outlines' package which needs Rust/Cargo to compile
         
         mx.random.seed(seed)
         prompt_cache = make_prompt_cache(self.model, self.max_kv_size)
