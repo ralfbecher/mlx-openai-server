@@ -1034,7 +1034,7 @@ async def process_multimodal_request(
 ) -> ChatCompletionResponse | StreamingResponse | JSONResponse:
     """Process multimodal-specific requests."""
     if request_id:
-        logger.info(f"Processing multimodal request [request_id={request_id}]")
+        logger.debug(f"Processing multimodal request [request_id={request_id}]")
 
     if request.stream:
         return StreamingResponse(
@@ -1062,7 +1062,7 @@ async def process_text_request(
 ) -> ChatCompletionResponse | StreamingResponse | JSONResponse:
     """Process text-only requests."""
     if request_id:
-        logger.info(f"Processing text request [request_id={request_id}]")
+        logger.debug(f"Processing text request [request_id={request_id}]")
 
     if request.stream:
         return StreamingResponse(

@@ -551,23 +551,23 @@ class MLXFluxHandler:
             # Add image path for image editing if provided
             if image_path:
                 model_params["image_path"] = image_path
-                logger.info(
+                logger.debug(
                     f"Processing image edit with prompt: {prompt[:50]}... and image: {image_path}"
                 )
             else:
-                logger.info(f"Generating image with prompt: {prompt[:50]}...")
+                logger.debug(f"Generating image with prompt: {prompt[:50]}...")
 
             # Log all model parameters
-            logger.info("Model inference configurations:")
-            logger.info(f"  - Prompt: {prompt[:100]}...")
-            logger.info(f"  - Negative prompt: {negative_prompt}")
-            logger.info(f"  - Steps: {steps}")
-            logger.info(f"  - Seed: {seed}")
-            logger.info(f"  - Width: {width}")
-            logger.info(f"  - Height: {height}")
-            logger.info(f"  - Guidance scale: {guidance}")
-            logger.info(f"  - Image path: {image_path}")
-            logger.info(f"  - Model params: {model_params}")
+            logger.debug("Model inference configurations:")
+            logger.debug(f"  - Prompt: {prompt[:100]}...")
+            logger.debug(f"  - Negative prompt: {negative_prompt}")
+            logger.debug(f"  - Steps: {steps}")
+            logger.debug(f"  - Seed: {seed}")
+            logger.debug(f"  - Width: {width}")
+            logger.debug(f"  - Height: {height}")
+            logger.debug(f"  - Guidance scale: {guidance}")
+            logger.debug(f"  - Image path: {image_path}")
+            logger.debug(f"  - Model params: {model_params}")
 
             # Generate image
             return self.model(prompt=prompt, seed=seed, **model_params)

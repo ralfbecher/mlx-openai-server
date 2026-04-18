@@ -129,6 +129,31 @@ class PromptTrie:
         return PromptTrieResult(None, shorter, longer, common_prefix)
 
 
+def _clone_cache_item(cache_item: Any) -> Any:
+    """Clone a single cache object while preserving its concrete cache type.
+
+    MLX cache implementations expose ``state`` / ``meta_state`` properties and
+    a ``from_state`` constructor. Cloning via that interface avoids a generic
+    deep-copy walk over the full cache object graph while still producing an
+    independent cache instance for mutation during inference.
+    """
+
+    cache_type = type(cache_item)
+    from_state = getattr(cache_type, "from_state", None)
+    if from_state is None:
+        return copy.deepcopy(cache_item)
+
+    state = copy.deepcopy(getattr(cache_item, "state"))
+    meta_state = copy.deepcopy(getattr(cache_item, "meta_state"))
+    return cache_type.from_state(state, meta_state)
+
+
+def clone_prompt_cache(prompt_cache: list[Any]) -> list[Any]:
+    """Clone a prompt cache list for safe per-request mutation."""
+
+    return [_clone_cache_item(cache_item) for cache_item in prompt_cache]
+
+
 class LRUPromptCache:
     """LRU cache for MLX prompt KV caches.
 
@@ -228,13 +253,13 @@ class LRUPromptCache:
         result = self._trie.search(tokens_ids)
         if result.exact is not None:
             cache_entry = self._trie.get(result.exact)
-            return copy.deepcopy(cache_entry.prompt_cache), []
+            return clone_prompt_cache(cache_entry.prompt_cache), []
 
         short_length = len(result.shorter) if result.shorter is not None else 0
         if result.longer is not None and result.common_prefix > short_length:
             cache_entry = self._trie.get(result.longer)
             if can_trim_prompt_cache(cache_entry.prompt_cache):
-                cache = copy.deepcopy(cache_entry.prompt_cache)
+                cache = clone_prompt_cache(cache_entry.prompt_cache)
                 prefix = min(len(tokens_ids) - 1, result.common_prefix)
                 num_to_trim = len(result.longer) - prefix
                 trim_prompt_cache(cache, num_to_trim)
@@ -242,7 +267,7 @@ class LRUPromptCache:
 
         if short_length > 0:
             cache_entry = self._trie.get(result.shorter)
-            return copy.deepcopy(cache_entry.prompt_cache), tokens_ids[short_length:]
+            return clone_prompt_cache(cache_entry.prompt_cache), tokens_ids[short_length:]
 
         return None, tokens_ids
 

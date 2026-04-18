@@ -39,7 +39,7 @@ class OpenAIBaseModel(BaseModel):
 
         # Compare against both field names and aliases
         if any(k not in field_names for k in data):
-            logger.warning(
+            logger.debug(
                 "The following fields were present in the request but ignored: {}",
                 data.keys() - field_names,
             )
@@ -241,6 +241,7 @@ class FunctionDefinition(OpenAIBaseModel):
     name: str
     description: str | None = None
     parameters: dict[str, Any] | None = None
+    strict: bool | None = None
 
 
 class ChatCompletionToolsParam(OpenAIBaseModel):

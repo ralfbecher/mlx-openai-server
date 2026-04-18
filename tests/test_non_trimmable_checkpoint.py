@@ -280,6 +280,43 @@ class TestComputeCheckpointBoundary:
         boundary = handler._compute_checkpoint_boundary(messages, input_ids, {})
         assert boundary is None
 
+    def test_boundary_result_is_cached_for_repeated_inputs(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Repeated identical requests should reuse the cached boundary."""
+        handler = self._make_handler(monkeypatch)
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Hello world"},
+        ]
+        full_prompt = handler.model.create_input_prompt(messages, {})
+        input_ids = handler.model.encode_prompt(full_prompt)
+
+        create_calls = 0
+        encode_calls = 0
+        original_create = handler.model.create_input_prompt
+        original_encode = handler.model.encode_prompt
+
+        def counted_create(messages: list[dict], kwargs: dict) -> str:
+            nonlocal create_calls
+            create_calls += 1
+            return original_create(messages, kwargs)
+
+        def counted_encode(prompt: str) -> list[int]:
+            nonlocal encode_calls
+            encode_calls += 1
+            return original_encode(prompt)
+
+        handler.model.create_input_prompt = counted_create
+        handler.model.encode_prompt = counted_encode
+
+        first = handler._compute_checkpoint_boundary(messages, input_ids, {})
+        second = handler._compute_checkpoint_boundary(messages, input_ids, {})
+
+        assert first == second
+        assert create_calls == 1
+        assert encode_calls == 1
+
 
 # ---------------------------------------------------------------------------
 # MLX_LM.__call__ checkpoint integration

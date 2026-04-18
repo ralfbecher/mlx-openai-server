@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator, Callable, Generator
+from dataclasses import dataclass
 import queue
 import threading
 from threading import Thread
@@ -31,6 +32,14 @@ def _resolve_future(
         pass
 
 
+@dataclass
+class _QueuedWork:
+    """Thread-safe state shared between the async caller and worker thread."""
+
+    cancel_event: threading.Event
+    started_event: threading.Event
+
+
 class InferenceWorker:
     """Runs blocking inference on one thread; submit() and submit_stream() from async code."""
 
@@ -44,6 +53,7 @@ class InferenceWorker:
         self._active = False
         self._completed = 0
         self._failed = 0
+        self._abandoned = 0
 
     def start(self) -> None:
         if self._running:
@@ -85,12 +95,25 @@ class InferenceWorker:
             else:
                 self._failed += 1
 
+    def _record_abandoned(self) -> None:
+        with self._lock:
+            self._abandoned += 1
+
     async def submit(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Run func on the worker thread; await its result. Raises QueueFull, TimeoutError, or func's exception."""
         loop = asyncio.get_running_loop()
         future: asyncio.Future[Any] = loop.create_future()
+        work_state = _QueuedWork(
+            cancel_event=threading.Event(),
+            started_event=threading.Event(),
+        )
 
         def _work() -> None:
+            if work_state.cancel_event.is_set():
+                logger.debug("Skipping abandoned inference request before execution")
+                self._record_abandoned()
+                return
+            work_state.started_event.set()
             try:
                 out = func(*args, **kwargs)
                 loop.call_soon_threadsafe(_resolve_future, future, out, None)
@@ -106,7 +129,15 @@ class InferenceWorker:
         try:
             return await asyncio.wait_for(future, timeout=self._timeout)
         except TimeoutError:
+            work_state.cancel_event.set()
+            if not work_state.started_event.is_set():
+                logger.warning(
+                    f"Inference request timed out after {self._timeout}s before execution began"
+                )
             raise TimeoutError(f"Inference timed out after {self._timeout}s")
+        except asyncio.CancelledError:
+            work_state.cancel_event.set()
+            raise
 
     def submit_stream(
         self,
@@ -117,13 +148,21 @@ class InferenceWorker:
         """Run func on the worker thread; yield its generator items asynchronously. Raises QueueFull or func's exception."""
         loop = asyncio.get_running_loop()
         token_queue: asyncio.Queue[Any] = asyncio.Queue()
-        cancel_event = threading.Event()
+        work_state = _QueuedWork(
+            cancel_event=threading.Event(),
+            started_event=threading.Event(),
+        )
 
         def _work() -> None:
+            if work_state.cancel_event.is_set():
+                logger.debug("Skipping abandoned streaming request before execution")
+                self._record_abandoned()
+                return
+            work_state.started_event.set()
             try:
                 gen = func(*args, **kwargs)
                 for item in gen:
-                    if cancel_event.is_set():
+                    if work_state.cancel_event.is_set():
                         logger.info("Inference generation cancelled (client disconnect)")
                         break
                     loop.call_soon_threadsafe(token_queue.put_nowait, item)
@@ -137,7 +176,7 @@ class InferenceWorker:
             self._work_queue.put_nowait(_work)
         except queue.Full:
             raise asyncio.QueueFull("Inference queue is full")
-        return self._read_stream(token_queue, cancel_event)
+        return self._read_stream(token_queue, work_state.cancel_event)
 
     @staticmethod
     async def _read_stream(
@@ -164,4 +203,5 @@ class InferenceWorker:
                 "active_requests": 1 if self._active else 0,
                 "completed_requests": self._completed,
                 "failed_requests": self._failed,
+                "abandoned_requests": self._abandoned,
             }

@@ -1,9 +1,10 @@
 import asyncio
+from collections import OrderedDict
 from collections.abc import AsyncGenerator
-import copy
 from dataclasses import dataclass
 import gc
 from http import HTTPStatus
+import json
 import time
 from typing import Any
 
@@ -27,7 +28,7 @@ from ..utils.debug_logging import (
     make_prompt_progress_callback,
 )
 from ..utils.errors import create_error_response
-from ..utils.prompt_cache import LRUPromptCache
+from ..utils.prompt_cache import LRUPromptCache, clone_prompt_cache
 
 
 def _strip_complete_tool_blocks(text: str, tool_open: str, tool_close: str) -> str:
@@ -93,6 +94,7 @@ class MLXLMHandler:
     """
 
     handler_type: str = "lm"
+    _CHECKPOINT_BOUNDARY_CACHE_SIZE = 128
 
     def __init__(
         self,
@@ -170,6 +172,7 @@ class MLXLMHandler:
             tool_parser_name=tool_call_parser,
             reasoning_parser_name=reasoning_parser,
         )
+        self._checkpoint_boundary_cache: OrderedDict[str, int | None] = OrderedDict()
         # Dedicated inference thread — keeps the event loop free during
         # blocking MLX model computation.
         self.inference_worker = InferenceWorker()
@@ -260,6 +263,13 @@ class MLXLMHandler:
         if messages[-1].get("role") != "user":
             return None
 
+        cache_key = self._make_checkpoint_boundary_cache_key(messages, chat_template_kwargs)
+        cached_boundary = self._get_cached_checkpoint_boundary(cache_key)
+        if cached_boundary is not None or cache_key in getattr(
+            self, "_checkpoint_boundary_cache", {}
+        ):
+            return cached_boundary
+
         sentinel_messages = [*messages[:-1], {"role": "user", "content": "x"}]
         try:
             sentinel_prompt = self.model.create_input_prompt(
@@ -268,6 +278,7 @@ class MLXLMHandler:
             sentinel_ids = self.model.encode_prompt(sentinel_prompt)
         except Exception:
             logger.debug("Could not compute checkpoint boundary via sentinel substitution")
+            self._store_checkpoint_boundary(cache_key, None)
             return None
 
         common = 0
@@ -279,9 +290,55 @@ class MLXLMHandler:
         if common > 0:
             user_msg_length = len(input_ids) - common
             if user_msg_length > 0:
+                self._store_checkpoint_boundary(cache_key, common)
                 return common
 
+        self._store_checkpoint_boundary(cache_key, None)
         return None
+
+    @staticmethod
+    def _make_checkpoint_boundary_cache_key(
+        messages: list[dict[str, Any]],
+        chat_template_kwargs: dict[str, Any],
+    ) -> str:
+        """Build a stable cache key for boundary computation inputs."""
+
+        try:
+            return json.dumps(
+                {
+                    "messages": messages,
+                    "chat_template_kwargs": chat_template_kwargs,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+        except TypeError:
+            return repr((messages, chat_template_kwargs))
+
+    def _get_cached_checkpoint_boundary(self, cache_key: str) -> int | None:
+        """Return a cached boundary result and refresh its recency."""
+
+        cache = getattr(self, "_checkpoint_boundary_cache", None)
+        if cache is None:
+            cache = OrderedDict()
+            self._checkpoint_boundary_cache = cache
+        if cache_key not in cache:
+            return None
+        cache.move_to_end(cache_key)
+        return cache[cache_key]
+
+    def _store_checkpoint_boundary(self, cache_key: str, boundary: int | None) -> None:
+        """Store a boundary result with a small LRU eviction policy."""
+
+        cache = getattr(self, "_checkpoint_boundary_cache", None)
+        if cache is None:
+            cache = OrderedDict()
+            self._checkpoint_boundary_cache = cache
+        cache[cache_key] = boundary
+        cache.move_to_end(cache_key)
+        while len(cache) > self._CHECKPOINT_BOUNDARY_CACHE_SIZE:
+            cache.popitem(last=False)
 
     async def _build_inference_context(self, request: ChatCompletionRequest) -> "_InferenceContext":
         """Build the common inference context shared by stream and non-stream paths.
@@ -351,7 +408,7 @@ class MLXLMHandler:
                 ) -> None:
                     _store.insert_cache(
                         _prefix_ids,
-                        copy.deepcopy(prompt_cache_state),
+                        clone_prompt_cache(prompt_cache_state),
                         cache_type="system",
                     )
 
